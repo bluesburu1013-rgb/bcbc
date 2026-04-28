@@ -1,0 +1,118 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif-sc: "Noto Serif SC", serif;
+  --font-playfair: "Playfair Display", serif;
+  
+  --color-sky-blue: #A8D8EA;
+  --color-milk-yellow: #FFEAA7;
+  --color-soft-bg: #FBFAF8;
+}
+
+@layer base {
+  body {
+    @apply bg-soft-bg text-[#4A4A4A] font-serif-sc overflow-x-hidden;
+  }
+}
+
+@keyframes bubble-up {
+  0% { transform: translateY(0) scale(0); opacity: 0; }
+  50% { opacity: 0.8; }
+  100% { transform: translateY(-40px) scale(1.2); opacity: 0; }
+}
+
+.animate-celebrate {
+  animation: bubble-up 0.8s ease-out forwards;
+}
+
+/* Envelope Styles */
+.envelope-closed {
+  position: relative;
+  background-color: #FFEAA7;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.envelope-closed::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: #f8df81;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  z-index: 1;
+}
+
+.envelope-open-flap {
+  transform-origin: top;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.envelope-open-flap.open {
+  transform: rotateX(180deg);
+}
+
+/* Loading Screen Animations */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes float-cloud {
+  from { transform: translateX(-10% ); }
+  to { transform: translateX(110%); }
+}
+
+@keyframes character-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.pixel-border {
+  box-shadow: 
+    0 -4px 0 0 #000,
+    0 4px 0 0 #000,
+    -4px 0 0 0 #000,
+    4px 0 0 0 #000;
+}
+
+.loading-gradient {
+  background: linear-gradient(
+    45deg,
+    var(--color-sky-blue),
+    #FCE7F3,
+    var(--color-milk-yellow)
+  );
+  background-size: 400% 400%;
+  animation: shimmer 5s ease infinite;
+}
+
+.star {
+  position: absolute;
+  background: white;
+  border-radius: 50%;
+  filter: blur(1px);
+  animation: twinkle var(--duration) ease-in-out infinite;
+}
+
+.cloud {
+  position: absolute;
+  background: white;
+  border-radius: 50%;
+  filter: blur(20px);
+  opacity: 0.4;
+  animation: float-cloud var(--duration) linear infinite;
+}
+
+.scrapbook-texture {
+  background-image: radial-gradient(#e5e7eb 0.5px, transparent 0.5px);
+  background-size: 20px 20px;
+}
