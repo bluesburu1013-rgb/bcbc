@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, FormEvent } from 'react';
+import React, { useEffect, useState, useMemo, FormEvent, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Heart, Star, Target, BookOpen, Clock, Settings, X, Calendar, Check, Cat, Dog, Sparkles } from 'lucide-react';
 
@@ -8,6 +8,7 @@ interface CoupleInfo {
   partnerName: string;
   myName: string;
   slogan: string;
+  memorials?: { id: string; title: string; date: string }[];
 }
 
 interface Wish {
@@ -20,12 +21,14 @@ interface Wish {
 interface Goal {
   id: string;
   title: string;
+  emoji: string;
   description?: string;
   deadline?: string;
   tag?: string;
   progress: number;
   status: 'active' | 'completed' | 'paused';
   createdAt: string;
+  milestones: { id: string; text: string; completed: boolean }[];
 }
 
 interface Memory {
@@ -35,6 +38,7 @@ interface Memory {
   content: string;
   imageUrls: string[];
   tag?: string;
+  mood?: string;
   goalId?: string;
   createdAt: string;
 }
@@ -101,26 +105,40 @@ export default function App() {
     content: '',
     imageUrls: [],
     tag: '',
-    goalId: ''
+    mood: '',
+    goalId: '',
+  });
+  const [memoryFilter, setMemoryFilter] = useState({
+    mood: '',
+    goalId: 'all',
+    startDate: '',
+    endDate: ''
   });
   const [goalFilter, setGoalFilter] = useState<GoalFilter>('all');
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
   const [newGoalForm, setNewGoalForm] = useState<Partial<Goal>>({
     title: '',
+    emoji: '🎯',
     description: '',
     deadline: '',
     tag: '',
     progress: 0,
-    status: 'active'
+    status: 'active',
+    milestones: []
   });
+  const [newMilestoneText, setNewMilestoneText] = useState('');
   const [newWishText, setNewWishText] = useState('');
   const [celebratingId, setCelebratingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CoupleInfo>({
     startDate: '',
     partnerName: '',
     myName: '',
-    slogan: ''
+    slogan: '',
+    memorials: []
   });
+  const [isAddingMemorial, setIsAddingMemorial] = useState(false);
+  const [newMemDay, setNewMemDay] = useState({ title: '', date: '' });
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -190,20 +208,80 @@ export default function App() {
     e.preventDefault();
     if (!newGoalForm.title?.trim()) return;
 
+    const milestones = newGoalForm.milestones || [];
+    const completedCount = milestones.filter(m => m.completed).length;
+    const progress = milestones.length > 0 ? Math.round((completedCount / milestones.length) * 100) : 0;
+
     const goal: Goal = {
       id: crypto.randomUUID(),
       title: newGoalForm.title.trim(),
+      emoji: newGoalForm.emoji || '🎯',
       description: newGoalForm.description?.trim(),
       deadline: newGoalForm.deadline,
       tag: newGoalForm.tag?.trim(),
-      progress: newGoalForm.progress || 0,
-      status: (newGoalForm.progress === 100 ? 'completed' : 'active') as any,
+      progress,
+      status: (progress === 100 ? 'completed' : 'active') as any,
       createdAt: new Date().toISOString(),
+      milestones,
     };
 
     setGoals([goal, ...goals]);
     setIsGoalModalOpen(false);
-    setNewGoalForm({ title: '', description: '', deadline: '', tag: '', progress: 0, status: 'active' });
+    setNewGoalForm({ 
+      title: '', 
+      emoji: '🎯', 
+      description: '', 
+      deadline: '', 
+      tag: '', 
+      progress: 0, 
+      status: 'active',
+      milestones: [] 
+    });
+  };
+
+  const toggleMilestone = (goalId: string, milestoneId: string) => {
+    setGoals(prev => prev.map(g => {
+      if (g.id === goalId) {
+        const newMilestones = g.milestones.map(m => 
+          m.id === milestoneId ? { ...m, completed: !m.completed } : m
+        );
+        const completedCount = newMilestones.filter(m => m.completed).length;
+        const newProgress = Math.round((completedCount / newMilestones.length) * 100);
+        
+        if (newProgress === 100 && g.progress < 100) {
+          setCelebratingId(goalId);
+          setTimeout(() => setCelebratingId(null), 1000);
+        }
+
+        return {
+          ...g,
+          milestones: newMilestones,
+          progress: newProgress,
+          status: newProgress === 100 ? 'completed' : 'active'
+        };
+      }
+      return g;
+    }));
+  };
+
+  const addMilestoneToForm = () => {
+    if (!newMilestoneText.trim()) return;
+    setNewGoalForm(prev => ({
+      ...prev,
+      milestones: [...(prev.milestones || []), {
+        id: crypto.randomUUID(),
+        text: newMilestoneText.trim(),
+        completed: false
+      }]
+    }));
+    setNewMilestoneText('');
+  };
+
+  const removeMilestoneFromForm = (id: string) => {
+    setNewGoalForm(prev => ({
+      ...prev,
+      milestones: prev.milestones?.filter(m => m.id !== id)
+    }));
   };
 
   const updateGoalProgress = (id: string, progress: number) => {
@@ -248,6 +326,7 @@ export default function App() {
       content: newMemoryForm.content.trim(),
       imageUrls: newMemoryForm.imageUrls || [],
       tag: newMemoryForm.tag?.trim(),
+      mood: newMemoryForm.mood as any,
       goalId: newMemoryForm.goalId,
       createdAt: new Date().toISOString(),
     };
@@ -260,6 +339,7 @@ export default function App() {
       content: '',
       imageUrls: [],
       tag: '',
+      mood: '',
       goalId: ''
     });
   };
@@ -296,6 +376,19 @@ export default function App() {
     setCapsules(prev => prev.filter(c => c.id !== id));
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewMemoryForm(prev => ({
+          ...prev,
+          imageUrls: [...(prev.imageUrls || []), reader.result as string]
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   const addWish = (e?: FormEvent) => {
     if (e) e.preventDefault();
     if (!newWishText.trim()) return;
@@ -339,6 +432,30 @@ export default function App() {
 
   const daysTogether = useMemo(() => info ? calculateDaysTogether(info.startDate) : 0, [info]);
   const nextAnniv = useMemo(() => info ? getNextAnniversary(info.startDate) : null, [info]);
+
+  const nextMemorial = useMemo(() => {
+    if (!info?.memorials || info.memorials.length === 0) return null;
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    
+    const futureMemorials = info.memorials.map(m => {
+      const parts = m.date.split('-');
+      // Assume date format is YYYY-MM-DD
+      const mDate = new Date(m.date);
+      let next = new Date(currentYear, mDate.getMonth(), mDate.getDate());
+      if (next < now) {
+        next.setFullYear(currentYear + 1);
+      }
+      const diff = next.getTime() - now.getTime();
+      return { 
+        ...m, 
+        daysRemaining: Math.ceil(diff / (1000 * 60 * 60 * 24)),
+        nextDate: next
+      };
+    });
+
+    return futureMemorials.sort((a, b) => a.daysRemaining - b.daysRemaining)[0];
+  }, [info]);
 
   const navItems = [
     { id: 'home', icon: Heart, label: '首页' },
@@ -512,12 +629,105 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="pt-8 border-t border-gray-50 flex flex-col items-center">
-                    <p className="text-gray-400 text-xs mb-2 flex items-center gap-1.5">
-                      <Calendar size={14} /> 下一个周年纪念日还有
-                    </p>
-                    <div className="text-2xl font-serif-sc font-medium text-gray-700">
-                      {nextAnniv?.daysRemaining} <span className="text-sm text-gray-400">天</span>
+                  <div className="pt-8 border-t border-gray-50 flex flex-col items-center gap-6">
+                    <div className="flex flex-col items-center">
+                      <p className="text-gray-400 text-xs mb-2 flex items-center gap-1.5">
+                        <Calendar size={14} /> 下一个周年纪念日还有
+                      </p>
+                      <div className="text-2xl font-serif-sc font-medium text-gray-700">
+                        {nextAnniv?.daysRemaining} <span className="text-sm text-gray-400">天</span>
+                      </div>
+                    </div>
+
+                    {nextMemorial && (
+                       <div className="flex flex-col items-center animate-in fade-in slide-in-from-top-2">
+                        <p className="text-gray-400 text-xs mb-2 flex items-center gap-1.5">
+                          <Sparkles size={14} className="text-sky-blue" /> 下一个纪念日({nextMemorial.title})还有
+                        </p>
+                        <div className="text-2xl font-serif-sc font-medium text-gray-700">
+                          {nextMemorial.daysRemaining} <span className="text-sm text-gray-400">天</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="w-full pt-4 border-t border-gray-50/50">
+                      <button 
+                        onClick={() => setIsAddingMemorial(!isAddingMemorial)}
+                        className="text-[10px] font-bold text-sky-blue/60 hover:text-sky-blue transition-colors uppercase tracking-widest flex items-center justify-center gap-1 mx-auto"
+                      >
+                        {isAddingMemorial ? '收起管理' : (info?.memorials?.length ? '管理其他纪念日' : '+ 添加纪念日')}
+                      </button>
+
+                      <AnimatePresence>
+                        {isAddingMemorial && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden mt-4 space-y-4"
+                          >
+                            {/* Simple Add Form */}
+                            <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+                              <input 
+                                placeholder="纪念日名称 (如: 第一次看电影)"
+                                className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs font-serif-sc focus:ring-1 focus:ring-sky-blue/20 outline-none"
+                                value={newMemDay.title}
+                                onChange={e => setNewMemDay({...newMemDay, title: e.target.value})}
+                              />
+                              <div className="flex gap-2">
+                                <input 
+                                  type="date"
+                                  className="flex-1 bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs focus:ring-1 focus:ring-sky-blue/20 outline-none"
+                                  value={newMemDay.date}
+                                  onChange={e => setNewMemDay({...newMemDay, date: e.target.value})}
+                                />
+                                <button 
+                                  onClick={() => {
+                                    if (!newMemDay.title || !newMemDay.date) return;
+                                    const updatedInfo = {
+                                      ...info!,
+                                      memorials: [...(info?.memorials || []), { ...newMemDay, id: crypto.randomUUID() }]
+                                    };
+                                    setInfo(updatedInfo);
+                                    localStorage.setItem('couple_info', JSON.stringify(updatedInfo));
+                                    setNewMemDay({ title: '', date: '' });
+                                  }}
+                                  className="bg-sky-blue text-white px-4 rounded-xl text-xs font-bold shadow-sm active:scale-95 transition-transform"
+                                >
+                                  添加
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* List of custom memorials */}
+                            {info?.memorials && info.memorials.length > 0 && (
+                              <div className="space-y-2 max-h-32 overflow-auto custom-scrollbar pr-1">
+                                {info.memorials.map(m => (
+                                  <div key={m.id} className="flex justify-between items-center bg-gray-50/50 rounded-xl px-4 py-2 border border-gray-100">
+                                    <div className="text-left">
+                                      <p className="text-[10px] font-bold text-gray-700 font-serif-sc">{m.title}</p>
+                                      <p className="text-[8px] text-gray-400 font-mono italic">{m.date}</p>
+                                    </div>
+                                    <button 
+                                      onClick={() => {
+                                        const updatedInfo = {
+                                          ...info!,
+                                          memorials: info?.memorials?.filter(x => x.id !== m.id)
+                                        };
+                                        setInfo(updatedInfo);
+                                        localStorage.setItem('couple_info', JSON.stringify(updatedInfo));
+                                      }}
+                                      className="text-gray-300 hover:text-red-400 transition-colors"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </div>
                 </div>
@@ -770,119 +980,214 @@ export default function App() {
               </div>
 
               {/* Goals List */}
-              <div className="space-y-4 pb-12">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-12">
                 <AnimatePresence mode="popLayout">
                   {goals
                     .filter(g => goalFilter === 'all' || g.status === goalFilter)
-                    .map((goal) => (
-                      <motion.div
-                        key={goal.id}
-                        layout
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 10 }}
-                        className={`group p-6 rounded-[2rem] bg-white shadow-sm border-2 transition-all relative overflow-hidden ${
-                          goal.status === 'active' ? 'border-sky-blue/10' : 
-                          goal.status === 'completed' ? 'border-green-100' : 'border-gray-100 opacity-60'
-                        }`}
-                      >
-                        {/* Status Toggle & Delete */}
-                        <div className="absolute top-4 right-4 flex gap-2">
-                          <select 
-                            value={goal.status}
-                            onChange={(e) => updateGoalStatus(goal.id, e.target.value as any)}
-                            className={`text-[10px] font-bold py-1 px-3 rounded-full border-none outline-none cursor-pointer transition-all ${
-                              goal.status === 'active' ? 'bg-sky-blue/15 text-sky-blue' :
-                              goal.status === 'completed' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                            }`}
-                          >
-                            <option value="active">进行中</option>
-                            <option value="completed">已完成</option>
-                            <option value="paused">搁置</option>
-                          </select>
-                          <button 
-                            onClick={() => deleteGoal(goal.id)}
-                            className="p-1 px-2 bg-gray-50 text-gray-300 hover:text-red-400 rounded-full transition-colors"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
+                    .map((goal) => {
+                      const linkedMemories = memories.filter(m => m.goalId === goal.id);
+                      const daysLeft = goal.deadline ? Math.ceil((new Date(goal.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : null;
 
-                        {/* Content */}
-                        <div className="space-y-4">
-                          <div className="space-y-1 pr-20">
-                            <h4 className={`text-lg font-bold font-serif-sc ${goal.status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                              {goal.title}
-                            </h4>
-                            {goal.description && <p className="text-xs text-gray-400 line-clamp-2">{goal.description}</p>}
+                      return (
+                        <motion.div
+                          key={goal.id}
+                          layout
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          onClick={() => setSelectedGoalId(goal.id)}
+                          className="group relative bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100/50 cursor-pointer hover:shadow-md transition-all active:scale-[0.98]"
+                        >
+                          <div className="flex items-start gap-4 mb-4">
+                            <div className="w-12 h-12 rounded-2xl bg-sky-blue/5 flex items-center justify-center text-2xl">
+                              {goal.emoji || '🎯'}
+                            </div>
+                            <div className="flex-1 space-y-1">
+                              <h4 className="font-bold text-gray-800 font-serif-sc truncate">{goal.title}</h4>
+                              <div className="flex items-center gap-3">
+                                {daysLeft !== null && (
+                                  <span className={`text-[10px] font-bold uppercase tracking-wider ${daysLeft < 7 ? 'text-red-400' : 'text-gray-400'}`}>
+                                    {daysLeft > 0 ? `剩 ${daysLeft} 天` : '已截止'}
+                                  </span>
+                                )}
+                                <span className="text-[10px] font-bold text-sky-blue uppercase tracking-wider flex items-center gap-1">
+                                  <BookOpen size={10} /> {linkedMemories.length} 篇回忆
+                                </span>
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="flex flex-wrap gap-2">
-                            {goal.tag && (
-                              <span className="px-2.5 py-1 bg-milk-yellow/20 text-yellow-600 text-[10px] font-bold rounded-lg border border-milk-yellow/50">
-                                {goal.tag}
-                              </span>
-                            )}
-                            {goal.deadline && (
-                              <span className="px-2.5 py-1 bg-gray-50 text-gray-400 text-[10px] font-bold rounded-lg flex items-center gap-1">
-                                <Calendar size={10} /> {goal.deadline}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Progress Controls */}
-                          <div className="space-y-3 pt-2">
-                            <div className="flex justify-between items-end">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center px-1">
                               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Progress</span>
-                              <span className="text-sm font-playfair font-bold text-sky-blue">{goal.progress}%</span>
+                              <span className="text-[10px] font-bold text-sky-blue">{goal.progress}%</span>
                             </div>
-                            <div className="relative group/range h-2">
-                              <input 
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={goal.progress}
-                                onChange={(e) => updateGoalProgress(goal.id, parseInt(e.target.value))}
-                                className="absolute inset-0 w-full h-full appearance-none bg-gray-100 rounded-full overflow-hidden cursor-pointer accent-sky-blue"
-                                style={{
-                                  background: `linear-gradient(to right, var(--color-sky-blue) ${goal.progress}%, #f3f4f6 ${goal.progress}%)`
-                                }}
+                            <div className="h-2 w-full bg-gray-50 rounded-full overflow-hidden p-0.5 border border-gray-100/50">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${goal.progress}%` }}
+                                className="h-full bg-gradient-to-r from-sky-blue to-blue-400 rounded-full"
                               />
                             </div>
                           </div>
-                        </div>
 
-                        {/* Celebrate Animation Anchor */}
-                        {celebratingId === goal.id && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            {[...Array(8)].map((_, i) => (
-                              <div
-                                key={i}
-                                className="absolute w-2 h-2 rounded-full bg-sky-blue animate-celebrate"
-                                style={{
-                                  animationDelay: `${i * 0.05}s`,
-                                  transform: `rotate(${i * 45}deg) translate(0px, 0px)`
-                                }}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </motion.div>
-                    ))}
-
-                  {goals.filter(g => goalFilter === 'all' || g.status === goalFilter).length === 0 && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-center py-20 text-gray-300 text-sm font-serif-sc"
-                    >
-                      在这个状态下还没有目标哦 ~
-                    </motion.div>
-                  )}
+                          {celebratingId === goal.id && (
+                            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                              <div className="text-4xl">🎉</div>
+                            </div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
                 </AnimatePresence>
+
+                {goals.filter(g => goalFilter === 'all' || g.status === goalFilter).length === 0 && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-center py-20 text-gray-300 text-sm font-serif-sc col-span-full"
+                  >
+                    在这个状态下还没有目标哦 ~
+                  </motion.div>
+                )}
               </div>
 
-              {/* Goal Modal */}
+              {/* Goal Detail Modal */}
+              <AnimatePresence>
+                {selectedGoalId && (() => {
+                  const goal = goals.find(g => g.id === selectedGoalId);
+                  if (!goal) return null;
+                  const linkedMemories = memories.filter(m => m.goalId === goal.id);
+
+                  return (
+                    <motion.div
+                      key="goal-detail"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-50 bg-white/90 backdrop-blur-xl flex items-center justify-center p-6"
+                    >
+                      <motion.div
+                        initial={{ scale: 0.9, y: 30 }}
+                        animate={{ scale: 1, y: 0 }}
+                        exit={{ scale: 0.9, y: 30 }}
+                        className="w-full max-w-xl bg-white rounded-[3rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-gray-100"
+                      >
+                        <div className="p-8 overflow-y-auto flex-1 custom-scrollbar">
+                          <div className="flex justify-between items-start mb-8">
+                            <div className="flex items-center gap-4">
+                              <div className="w-16 h-16 rounded-[1.5rem] bg-sky-blue/5 flex items-center justify-center text-4xl shadow-inner transform rotate-3">
+                                {goal.emoji}
+                              </div>
+                              <div className="space-y-1">
+                                <h3 className="text-2xl font-bold text-gray-800 font-serif-sc">{goal.title}</h3>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-[10px] bg-gray-50 text-gray-400 px-2 py-1 rounded-lg font-bold uppercase tracking-widest">{goal.tag || '无标签'}</span>
+                                  {goal.deadline && (
+                                    <span className="text-[10px] text-gray-300 font-bold uppercase">截止: {goal.deadline}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <button onClick={() => setSelectedGoalId(null)} className="p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400">
+                              <X size={24} />
+                            </button>
+                          </div>
+
+                          <div className="space-y-8">
+                            {/* Description */}
+                            {goal.description && (
+                              <section>
+                                <p className="text-sm text-gray-500 leading-relaxed font-serif-sc whitespace-pre-wrap italic">
+                                  "{goal.description}"
+                                </p>
+                              </section>
+                            )}
+
+                            {/* Milestones Checklist */}
+                            <section className="space-y-4">
+                              <h5 className="text-[10px] font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
+                                <div className="w-1.5 h-1.5 bg-sky-blue rounded-full" />
+                                里程碑 ({goal.milestones.filter(m => m.completed).length}/{goal.milestones.length})
+                              </h5>
+                              <div className="space-y-2">
+                                {goal.milestones.map((m) => (
+                                  <div 
+                                    key={m.id}
+                                    onClick={() => toggleMilestone(goal.id, m.id)}
+                                    className={`group flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all ${
+                                      m.completed ? 'bg-gray-50 text-gray-300' : 'bg-white border border-gray-100 hover:border-sky-blue/20'
+                                    }`}
+                                  >
+                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                                      m.completed ? 'bg-sky-blue border-sky-blue text-white' : 'border-gray-200'
+                                    }`}>
+                                      {m.completed && <Check size={12} strokeWidth={4} />}
+                                    </div>
+                                    <span className={`text-sm font-medium font-serif-sc ${m.completed ? 'line-through' : 'text-gray-700'}`}>
+                                      {m.text}
+                                    </span>
+                                  </div>
+                                ))}
+                                {goal.milestones.length === 0 && (
+                                  <div className="text-center py-4 text-gray-300 text-[10px] font-bold italic">
+                                    此目标还没有设置里程碑
+                                  </div>
+                                )}
+                              </div>
+                            </section>
+
+                            {/* Linked Memories Mini Strip */}
+                            <section className="space-y-4 pt-4 border-t border-gray-50">
+                              <h5 className="text-[10px] font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
+                                <BookOpen size={12} />
+                                关联回忆 ({linkedMemories.length})
+                              </h5>
+                              <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide px-1">
+                                {linkedMemories.map(m => (
+                                  <div key={m.id} className="shrink-0 w-32 group cursor-pointer" onClick={() => { setSelectedGoalId(null); setExpandedMemoryId(m.id); }}>
+                                    <div className="aspect-square bg-gray-100 rounded-2xl overflow-hidden mb-2">
+                                      {m.imageUrls[0] ? (
+                                        <img src={m.imageUrls[0]} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-gray-300"><Star size={16} /></div>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] font-bold text-gray-700 truncate font-serif-sc">{m.title}</p>
+                                    <p className="text-[8px] text-gray-300 uppercase tracking-widest">{m.date}</p>
+                                  </div>
+                                ))}
+                                {linkedMemories.length === 0 && (
+                                  <div className="text-center w-full py-8 text-gray-300 text-[10px] font-bold italic">
+                                    还没有关联的回忆哦
+                                  </div>
+                                )}
+                              </div>
+                            </section>
+                          </div>
+                        </div>
+
+                        <div className="p-8 bg-gray-50 flex justify-between items-center">
+                          <button 
+                            onClick={() => { deleteGoal(goal.id); setSelectedGoalId(null); }}
+                            className="text-xs font-bold text-red-300 hover:text-red-400 transition-colors uppercase tracking-widest"
+                          >
+                            Delete Goal
+                          </button>
+                          <button 
+                            onClick={() => setSelectedGoalId(null)}
+                            className="px-8 py-3 bg-white border border-gray-200 rounded-2xl text-xs font-bold text-gray-500 hover:bg-white/50 transition-all shadow-sm"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </motion.div>
+                    </motion.div>
+                  );
+                })()}
+              </AnimatePresence>
+
+              {/* Goal Create Modal */}
               <AnimatePresence>
                 {isGoalModalOpen && (
                   <motion.div
@@ -895,7 +1200,7 @@ export default function App() {
                       initial={{ scale: 0.9, y: 20 }}
                       animate={{ scale: 1, y: 0 }}
                       exit={{ scale: 0.9, y: 20 }}
-                      className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl p-8 border border-gray-100 overflow-y-auto max-h-[90vh]"
+                      className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 border border-gray-100 overflow-y-auto max-h-[90vh] custom-scrollbar"
                     >
                       <div className="flex justify-between items-center mb-6">
                         <h3 className="text-xl font-serif-sc font-bold text-gray-800">设定新目标</h3>
@@ -905,22 +1210,62 @@ export default function App() {
                       </div>
 
                       <form onSubmit={addGoal} className="space-y-5">
+                        <div className="flex gap-4">
+                          <div className="space-y-1.5 pt-1">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">图标</label>
+                            <input
+                              required
+                              className="w-14 h-14 text-2xl text-center rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc"
+                              value={newGoalForm.emoji}
+                              onChange={(e) => setNewGoalForm({ ...newGoalForm, emoji: e.target.value })}
+                            />
+                          </div>
+                          <div className="flex-1 space-y-1.5 pt-1">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">目标标题</label>
+                            <input
+                              required
+                              placeholder="我们要一起完成什么？"
+                              className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc"
+                              value={newGoalForm.title}
+                              onChange={(e) => setNewGoalForm({ ...newGoalForm, title: e.target.value })}
+                            />
+                          </div>
+                        </div>
+
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">目标标题</label>
-                          <input
-                            required
-                            placeholder="我们要一起完成什么？"
-                            className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc"
-                            value={newGoalForm.title}
-                            onChange={(e) => setNewGoalForm({ ...newGoalForm, title: e.target.value })}
-                          />
+                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">里程碑 (Checklist)</label>
+                          <div className="space-y-2">
+                             {newGoalForm.milestones?.map(m => (
+                               <div key={m.id} className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl">
+                                  <div className="w-1 h-4 bg-sky-blue/30 rounded-full" />
+                                  <span className="flex-1 text-xs font-serif-sc text-gray-600">{m.text}</span>
+                                  <button type="button" onClick={() => removeMilestoneFromForm(m.id)} className="text-gray-300 hover:text-red-400"><X size={14} /></button>
+                               </div>
+                             ))}
+                             <div className="flex gap-2">
+                               <input 
+                                 placeholder="添加具体的步骤..."
+                                 className="flex-1 px-4 py-2.5 rounded-xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 text-xs font-serif-sc"
+                                 value={newMilestoneText}
+                                 onChange={(e) => setNewMilestoneText(e.target.value)}
+                                 onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); addMilestoneToForm(); } }}
+                               />
+                               <button 
+                                 type="button"
+                                 onClick={addMilestoneToForm}
+                                 className="px-4 bg-sky-blue/10 text-sky-blue rounded-xl font-bold text-xs"
+                               >
+                                 添加
+                               </button>
+                             </div>
+                          </div>
                         </div>
 
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">描述 (可选)</label>
                           <textarea
                             placeholder="写下关于这个目标的小细节..."
-                            className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc min-h-[100px] resize-none"
+                            className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc min-h-[80px] resize-none text-sm"
                             value={newGoalForm.description}
                             onChange={(e) => setNewGoalForm({ ...newGoalForm, description: e.target.value })}
                           />
@@ -931,7 +1276,7 @@ export default function App() {
                             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">截止日期</label>
                             <input
                               type="date"
-                              className="w-full px-4 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-sm"
+                              className="w-full px-4 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-xs"
                               value={newGoalForm.deadline}
                               onChange={(e) => setNewGoalForm({ ...newGoalForm, deadline: e.target.value })}
                             />
@@ -940,7 +1285,7 @@ export default function App() {
                             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">标签</label>
                             <input
                               placeholder="旅行 / 存钱..."
-                              className="w-full px-4 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-sm"
+                              className="w-full px-4 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-xs"
                               value={newGoalForm.tag}
                               onChange={(e) => setNewGoalForm({ ...newGoalForm, tag: e.target.value })}
                             />
@@ -949,10 +1294,10 @@ export default function App() {
 
                         <button
                           type="submit"
-                          className="w-full py-4 mt-4 bg-sky-blue text-white font-bold rounded-2xl shadow-xl shadow-sky-blue/30 hover:brightness-105 active:scale-95 transition-all flex items-center justify-center gap-2"
+                          className="w-full py-4 mt-2 bg-sky-blue text-white font-bold rounded-2xl shadow-xl shadow-sky-blue/30 hover:brightness-105 active:scale-95 transition-all flex items-center justify-center gap-2"
                         >
                           <Check size={20} />
-                          开始执行
+                          开启新篇章
                         </button>
                       </form>
                     </motion.div>
@@ -983,13 +1328,56 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Memory Cards */}
-              <div className="grid gap-6 pb-12">
+              {/* Filter Bar */}
+              <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-50 flex flex-wrap gap-3">
+                <input 
+                  placeholder="搜索心情..."
+                  value={memoryFilter.mood}
+                  onChange={(e) => setMemoryFilter({...memoryFilter, mood: e.target.value})}
+                  className="bg-gray-50 text-[10px] font-bold py-2 px-3 rounded-xl border-none outline-none max-w-[100px]"
+                />
+
+                <select 
+                  value={memoryFilter.goalId}
+                  onChange={(e) => setMemoryFilter({...memoryFilter, goalId: e.target.value})}
+                  className="bg-gray-50 text-[10px] font-bold py-2 px-3 rounded-xl border-none outline-none max-w-[120px]"
+                >
+                  <option value="all">所有目标</option>
+                  {goals.map(g => (
+                    <option key={g.id} value={g.id}>{g.title}</option>
+                  ))}
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="date"
+                    value={memoryFilter.startDate}
+                    onChange={(e) => setMemoryFilter({...memoryFilter, startDate: e.target.value})}
+                    className="bg-gray-50 text-[10px] font-bold py-2 px-2 rounded-xl border-none outline-none"
+                  />
+                  <span className="text-gray-300">-</span>
+                  <input 
+                    type="date"
+                    value={memoryFilter.endDate}
+                    onChange={(e) => setMemoryFilter({...memoryFilter, endDate: e.target.value})}
+                    className="bg-gray-50 text-[10px] font-bold py-2 px-2 rounded-xl border-none outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Memory Cards - Responsive Masonry Grid */}
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 pb-12">
                 <AnimatePresence mode="popLayout">
                   {[...memories]
+                    .filter(m => {
+                      const moodMatch = !memoryFilter.mood || memoryFilter.mood === 'all' || m.mood?.toLowerCase().includes(memoryFilter.mood.toLowerCase());
+                      const goalMatch = memoryFilter.goalId === 'all' || m.goalId === memoryFilter.goalId;
+                      const dateMatch = (!memoryFilter.startDate || m.date >= memoryFilter.startDate) && 
+                                      (!memoryFilter.endDate || m.date <= memoryFilter.endDate);
+                      return moodMatch && goalMatch && dateMatch;
+                    })
                     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                     .map((memory) => {
-                      const isExpanded = expandedMemoryId === memory.id;
                       const associatedGoal = goals.find(g => g.id === memory.goalId);
                       
                       return (
@@ -999,82 +1387,135 @@ export default function App() {
                           initial={{ opacity: 0, scale: 0.95 }}
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.95 }}
-                          onClick={() => setExpandedMemoryId(isExpanded ? null : memory.id)}
-                          className="group bg-white rounded-3xl p-5 shadow-sm border border-gray-100/50 cursor-pointer overflow-hidden flex flex-col gap-4 active:scale-[0.98] transition-all"
+                          onClick={() => setExpandedMemoryId(memory.id)}
+                          className="group bg-white rounded-3xl p-3 shadow-sm border border-gray-100/50 cursor-pointer overflow-hidden flex flex-col gap-3 active:scale-[0.98] transition-all h-fit"
                         >
-                          {/* Image Preview / Collection */}
+                          {/* Image Preview */}
                           {memory.imageUrls.length > 0 ? (
-                            <div className={`grid gap-2 overflow-hidden rounded-2xl ${isExpanded ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                              {(isExpanded ? memory.imageUrls : [memory.imageUrls[0]]).map((url, idx) => (
-                                <div key={idx} className={`relative overflow-hidden aspect-[4/3] bg-gray-50 flex items-center justify-center`}>
-                                  <img 
-                                    src={url} 
-                                    alt={`memory-${idx}`}
-                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = '';
-                                      (e.target as HTMLImageElement).className = 'hidden';
-                                      (e.target as HTMLImageElement).parentElement?.classList.add('bg-gradient-to-br', 'from-sky-blue/20', 'to-milk-yellow/20');
-                                    }}
-                                  />
-                                </div>
-                              ))}
+                            <div className="relative overflow-hidden aspect-square bg-gray-50 rounded-2xl">
+                              <img 
+                                src={memory.imageUrls[0]} 
+                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                              />
+                              <div className="absolute top-2 left-2 px-2 py-0.5 bg-white/80 backdrop-blur-sm rounded-lg text-[8px] font-bold">
+                                {memory.mood || '开心'}
+                              </div>
                             </div>
                           ) : (
-                            <div className="aspect-[16/6] bg-gradient-to-br from-sky-blue/5 to-milk-yellow/5 rounded-2xl flex items-center justify-center text-gray-200">
-                              <Star size={32} />
+                            <div className="aspect-square bg-gradient-to-br from-sky-blue/5 to-milk-yellow/5 rounded-2xl flex items-center justify-center text-gray-200">
+                              <Star size={24} />
                             </div>
                           )}
 
-                          {/* Content */}
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-start">
-                              <div className="space-y-1">
-                                <h4 className="text-lg font-bold text-gray-800 font-serif-sc">{memory.title}</h4>
-                                <div className="flex items-center gap-3 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                                  <span>{memory.date}</span>
-                                  {memory.tag && (
-                                    <span className="text-sky-blue bg-sky-blue/10 px-2 py-0.5 rounded-md"># {memory.tag}</span>
-                                  )}
-                                </div>
-                              </div>
+                          {/* Content Summary */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-start gap-2">
+                              <h4 className="text-sm font-bold text-gray-800 font-serif-sc truncate flex-1">{memory.title}</h4>
                               <button 
+                                type="button"
                                 onClick={(e) => { 
                                   e.stopPropagation(); 
                                   deleteMemory(memory.id); 
                                 }}
-                                className="relative z-50 p-2 -mt-1 -mr-1 text-gray-300 hover:text-red-400 hover:bg-red-50 rounded-full transition-all group-hover:opacity-100 active:scale-90 pointer-events-auto"
+                                className="relative z-50 p-1 -mt-1 -mr-1 text-gray-300 hover:text-red-400 hover:bg-red-50 rounded-lg transition-all group-hover:opacity-100 opacity-100 pointer-events-auto"
                               >
-                                <X size={18} />
+                                <X size={14} />
                               </button>
                             </div>
-                            
-                            <p className={`text-sm text-gray-500 leading-relaxed font-serif-sc whitespace-pre-wrap ${isExpanded ? '' : 'line-clamp-2'}`}>
+                            <div className="flex items-center gap-1.5 text-[8px] text-gray-400 font-bold uppercase tracking-wider">
+                              <span>{memory.date}</span>
+                              {memory.tag && <span className="text-sky-blue">· {memory.tag}</span>}
+                            </div>
+                            <p className="text-[10px] text-gray-500 line-clamp-1 h-4 font-serif-sc">
                               {memory.content}
                             </p>
-
-                            {isExpanded && associatedGoal && (
-                              <div className="pt-4 border-t border-gray-50 flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">关联目标:</span>
-                                <div className="text-[10px] font-bold text-sky-blue bg-sky-blue/5 px-2 py-1 rounded-lg">
-                                  {associatedGoal.title}
-                                </div>
-                              </div>
-                            )}
                           </div>
                         </motion.div>
                       );
                     })}
                 </AnimatePresence>
-
-                {memories.length === 0 && (
-                  <div className="text-center py-20 text-gray-300 text-sm font-serif-sc">
-                    还没有记录过回忆哦 ~
-                  </div>
-                )}
               </div>
 
-              {/* Memory Modal */}
+              {/* Memory Detail Modal */}
+              <AnimatePresence>
+                {expandedMemoryId && (() => {
+                  const memory = memories.find(m => m.id === expandedMemoryId);
+                  if (!memory) return null;
+                  const associatedGoal = goals.find(g => g.id === memory.goalId);
+                  
+                  return (
+                    <motion.div
+                      key="memory-detail"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-[60] bg-white/90 backdrop-blur-xl flex items-center justify-center p-6"
+                    >
+                      <motion.div
+                        initial={{ scale: 0.9, y: 30 }}
+                        animate={{ scale: 1, y: 0 }}
+                        exit={{ scale: 0.9, y: 30 }}
+                        className="w-full max-w-xl bg-white rounded-[3rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-gray-100"
+                      >
+                        <div className="p-8 overflow-y-auto flex-1 custom-scrollbar">
+                          <div className="flex justify-between items-start mb-6">
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-3">
+                                <span className="bg-sky-blue/10 text-sky-blue px-3 py-1 rounded-full text-[10px] font-bold">
+                                  {memory.mood || '开心'}
+                                </span>
+                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{memory.date}</span>
+                              </div>
+                              <h3 className="text-2xl font-bold text-gray-800 font-serif-sc">{memory.title}</h3>
+                            </div>
+                            <button onClick={() => setExpandedMemoryId(null)} className="p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400">
+                              <X size={24} />
+                            </button>
+                          </div>
+
+                          {memory.imageUrls.length > 0 && (
+                            <div className="grid grid-cols-1 gap-4 mb-8">
+                              {memory.imageUrls.map((url, i) => (
+                                <img key={i} src={url} className="w-full rounded-[2rem] shadow-sm object-cover max-h-[400px]" />
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="space-y-6">
+                            <p className="text-gray-600 leading-relaxed font-serif-sc whitespace-pre-wrap">
+                              {memory.content}
+                            </p>
+
+                            <div className="flex flex-wrap gap-3 pt-6 border-t border-gray-50">
+                              {memory.tag && (
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-xl text-xs font-bold text-gray-400">
+                                  <Sparkles size={12} /> {memory.tag}
+                                </div>
+                              )}
+                              {associatedGoal && (
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-sky-blue/5 rounded-xl text-xs font-bold text-sky-blue">
+                                  <Target size={12} /> 关联目标: {associatedGoal.title}
+                                </div>
+                              )}
+                              <button 
+                                onClick={(e) => { 
+                                  deleteMemory(memory.id); 
+                                  setExpandedMemoryId(null);
+                                }}
+                                className="ml-auto flex items-center gap-2 px-4 py-1.5 text-red-400 hover:bg-red-50 rounded-xl text-xs font-bold transition-all"
+                              >
+                                <X size={14} /> 删除日记
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </motion.div>
+                  );
+                })()}
+              </AnimatePresence>
+
+              {/* Memory Form Modal */}
               <AnimatePresence>
                 {isMemoryModalOpen && (
                   <motion.div
@@ -1098,17 +1539,41 @@ export default function App() {
 
                       <form onSubmit={addMemory} className="space-y-4">
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">标题</label>
-                          <input
-                            required
-                            placeholder="给这段回忆起个名字"
-                            className="w-full px-5 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-sm"
-                            value={newMemoryForm.title}
-                            onChange={(e) => setNewMemoryForm({ ...newMemoryForm, title: e.target.value })}
-                          />
+                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">照片</label>
+                          <div className="flex flex-wrap gap-2">
+                            {newMemoryForm.imageUrls?.map((url, i) => (
+                              <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border">
+                                <img src={url} className="w-full h-full object-cover" />
+                                <button 
+                                  type="button"
+                                  onClick={() => setNewMemoryForm({
+                                    ...newMemoryForm, 
+                                    imageUrls: newMemoryForm.imageUrls?.filter((_, idx) => idx !== i)
+                                  })}
+                                  className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full"
+                                >
+                                  <X size={10} />
+                                </button>
+                              </div>
+                            ))}
+                            <label className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400 cursor-pointer hover:border-sky-blue hover:text-sky-blue transition-all">
+                              <Sparkles size={20} />
+                              <span className="text-[8px] mt-1">上传</span>
+                              <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                            </label>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">此刻心情</label>
+                            <input
+                              placeholder="此刻的心情是？"
+                              className="w-full px-4 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-sm"
+                              value={newMemoryForm.mood}
+                              onChange={(e) => setNewMemoryForm({ ...newMemoryForm, mood: e.target.value })}
+                            />
+                          </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">日期</label>
                             <input
@@ -1119,29 +1584,39 @@ export default function App() {
                               onChange={(e) => setNewMemoryForm({ ...newMemoryForm, date: e.target.value })}
                             />
                           </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">标签</label>
-                            <input
-                              placeholder="回忆分组"
-                              className="w-full px-4 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-sm"
-                              value={newMemoryForm.tag}
-                              onChange={(e) => setNewMemoryForm({ ...newMemoryForm, tag: e.target.value })}
-                            />
-                          </div>
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">关联目标 (可选)</label>
-                          <select
-                            className="w-full px-4 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-sm appearance-none"
-                            value={newMemoryForm.goalId}
-                            onChange={(e) => setNewMemoryForm({ ...newMemoryForm, goalId: e.target.value })}
-                          >
-                            <option value="">不关联目标</option>
-                            {goals.map(g => (
-                              <option key={g.id} value={g.id}>{g.title}</option>
-                            ))}
-                          </select>
+                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">标题</label>
+                          <input
+                            required
+                            placeholder="给这段记忆起个名字"
+                            className="w-full px-5 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-sm"
+                            value={newMemoryForm.title}
+                            onChange={(e) => setNewMemoryForm({ ...newMemoryForm, title: e.target.value })}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">标签与目标</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              placeholder="回忆分组"
+                              className="w-full px-4 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-xs"
+                              value={newMemoryForm.tag}
+                              onChange={(e) => setNewMemoryForm({ ...newMemoryForm, tag: e.target.value })}
+                            />
+                            <select
+                              className="w-full px-4 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-xs appearance-none"
+                              value={newMemoryForm.goalId}
+                              onChange={(e) => setNewMemoryForm({ ...newMemoryForm, goalId: e.target.value })}
+                            >
+                              <option value="">不关联目标</option>
+                              {goals.map(g => (
+                                <option key={g.id} value={g.id}>{g.title}</option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
 
                         <div className="space-y-1">
@@ -1152,15 +1627,6 @@ export default function App() {
                             className="w-full px-5 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-sm min-h-[120px] resize-none"
                             value={newMemoryForm.content}
                             onChange={(e) => setNewMemoryForm({ ...newMemoryForm, content: e.target.value })}
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">图片链接 (每行一个 URL)</label>
-                          <textarea
-                            placeholder="粘贴图片链接..."
-                            className="w-full px-5 py-3 rounded-2xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-sky-blue/20 transition-all font-serif-sc text-[10px] min-h-[80px] resize-none font-mono"
-                            onChange={(e) => setNewMemoryForm({ ...newMemoryForm, imageUrls: e.target.value.split('\n').filter(url => url.trim() !== '') })}
                           />
                         </div>
 
