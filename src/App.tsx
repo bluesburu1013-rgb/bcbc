@@ -80,7 +80,13 @@ const getNextAnniversary = (startDate: string) => {
 };
 
 export default function App() {
-  const [info, setInfo] = useState<CoupleInfo | null>(null);
+  const [info, setInfo] = useState<CoupleInfo | null>({
+    startDate: '2025-06-14',
+    partnerName: 'Buru',
+    myName: 'CC',
+    slogan: '我们的专属故事',
+    memorials: []
+  });
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [isSetupOpen, setIsSetupOpen] = useState(false);
   const [wishes, setWishes] = useState<Wish[]>([]);
@@ -131,10 +137,10 @@ export default function App() {
   const [newWishText, setNewWishText] = useState('');
   const [celebratingId, setCelebratingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CoupleInfo>({
-    startDate: '',
-    partnerName: '',
-    myName: '',
-    slogan: '',
+    startDate: '2025-06-14',
+    partnerName: 'Buru',
+    myName: 'CC',
+    slogan: '我们的专属故事',
     memorials: []
   });
   const [isAddingMemorial, setIsAddingMemorial] = useState(false);
@@ -148,7 +154,8 @@ export default function App() {
       setInfo(parsed);
       setFormData(parsed);
     } else {
-      setIsSetupOpen(true);
+      // Default initial state is already set, just save it if it's the first time
+      localStorage.setItem('couple_info', JSON.stringify(formData));
     }
 
     const savedWishes = localStorage.getItem('wishes');
@@ -524,7 +531,7 @@ export default function App() {
                 transition={{ duration: 2, repeat: Infinity }}
                 className="p-4 bg-milk-yellow/40 backdrop-blur-sm rounded-[2rem] border-2 border-white shadow-xl text-gray-700 relative"
               >
-                <Heart className="absolute -top-2 -right-2 text-red-300 fill-red-300" size={16} />
+                <Heart className="absolute -top-2 -right-2 text-sky-blue fill-sky-blue" size={16} />
                 <div className="w-10 h-10 bg-gray-700/10 rounded-full flex items-center justify-center font-bold text-lg">ʕ•ᴥ•ʔ</div>
               </motion.div>
 
@@ -584,8 +591,8 @@ export default function App() {
         <header className="px-6 py-8 md:max-w-xl md:mx-auto">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
-              <h1 className="text-2xl font-playfair font-semibold tracking-tight text-gray-800">
-                {info.myName} <span className="text-sky-blue mx-1">♥</span> {info.partnerName}
+              <h1 className="text-2xl font-playfair font-semibold tracking-tight text-gray-800 flex items-center gap-2">
+                {info.myName} <Heart size={18} className="text-sky-blue fill-sky-blue" /> {info.partnerName}
               </h1>
               <p className="text-sm text-gray-400 font-light italic">"{info.slogan || '我们的专属故事'}"</p>
             </div>
